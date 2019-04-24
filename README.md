@@ -10,6 +10,7 @@ CertKatz automatically patches the Crypto API `crypto::capi` on startup. This is
 
 
 CertKatz is licensed under the BSD 3-Clause license.
+CertKatz was written by [@doughsec](https://twitter.com/doughsec), though I barely did anything here :)
 
 ## Usage
 
