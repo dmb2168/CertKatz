@@ -8,7 +8,7 @@ SafetyKatz project, slightly modified to expose [@gentilkiwi](https://twitter.co
 The PE loading function was slightly changed to include more of Casey Smith's POC in order to allow us to load the Mimikatz PowerShell DLL and pass commands into it. Mimikatz was modified to a slimmed down version that only has the Crypto module.
 
 
-CertKatz allows you to run more than one command from the Mimikatz crypto module from the same process context. This is useful in environments where each run of a utility occurs in an independent process.
+CertKatz allows you to run more than one command from the Mimikatz crypto module from the same process context. This is useful in environments where each run of a utility occurs in an independent process (cobalt strike).
 
 
 CertKatz is licensed under the BSD 3-Clause license.
