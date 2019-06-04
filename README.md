@@ -12,7 +12,7 @@ CertKatz allows you to run more than one command from the Mimikatz crypto module
 
 
 CertKatz is licensed under the BSD 3-Clause license.
-CertKatz was written by [@doughsec](https://twitter.com/doughsec), though I barely did anything here :)
+CertKatz was written by [@doughsec](https://twitter.com/doughsec), though I barely did anything :)
 
 ## Usage
 
